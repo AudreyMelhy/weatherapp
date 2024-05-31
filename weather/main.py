@@ -14,7 +14,7 @@ def health():
 @app.route('/<city>')
 def hello(city):
     url = "https://weatherapi-com.p.rapidapi.com/current.json"
-    querystring = {"q":city}
+    querystring = {"q": quote(city)}  # Update this line
     headers = {
         'x-rapidapi-host': "weatherapi-com.p.rapidapi.com",
         'x-rapidapi-key': os.getenv("APIKEY")
