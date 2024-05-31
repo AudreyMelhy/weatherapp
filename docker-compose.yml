@@ -1,0 +1,79 @@
+version: '3.5'
+services:
+  db:
+    container_name: weatherapp-db
+    image: s5audrey/weatherapp-db:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WEATHERAPP_MYSQL_ROOT_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:   
+      - weatherapp
+    restart: always
+
+  redis:
+    container_name: weatherapp-redis
+    image: s5audrey/weatherapp-redis:latest
+    networks:
+      - weatherapp
+    environment:
+      REDIS_USER: redis
+      REDIS_PASSWORD: ${WEATHERAPP_REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    restart: always
+
+  weather:
+    container_name: weatherapp-weather
+    image: s5audrey/weatherapp-weather:latest
+    expose:
+      - 5000
+    environment:
+      APIKEY: ${WEATHERAPP_APIKEY}
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - db
+      - redis
+
+  auth:
+    container_name: weatherapp-auth
+    image: s5audrey/weatherapp-auth:latest
+    environment:
+      DB_HOST: db
+      DB_PASSWORD: ${WEATHERAPP_DB_PASSWORD}
+    expose:
+      - 8080
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - weather
+
+  ui:
+    container_name: weatherapp-ui
+    image: s5audrey/weatherapp-ui:latest
+    environment:
+      AUTH_HOST: auth
+      AUTH_PORT: 8080
+      WEATHER_HOST: weather
+      WEATHER_PORT: 5000
+      REDIS_USER: redis
+      REDIS_PASSWORD: ${WEATHERAPP_REDIS_PASSWORD}
+    expose:
+      - 3000
+    ports:
+      - 3055:3000
+    networks:
+      - weatherapp
+    restart: always
+    depends_on:
+      - auth
+
+networks:
+  weatherapp:
+
+volumes:
+  db-data:
+  redis-data:
