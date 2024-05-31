@@ -2,7 +2,6 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import requests
 import os
-from urllib.parse import quote  # Add this line
 
 app = Flask(__name__)
 CORS(app)
@@ -14,7 +13,7 @@ def health():
 @app.route('/<city>')
 def hello(city):
     url = "https://weatherapi-com.p.rapidapi.com/current.json"
-    querystring = {"q": quote(city)}  # Update this line
+    querystring = {"q":city}
     headers = {
         'x-rapidapi-host': "weatherapi-com.p.rapidapi.com",
         'x-rapidapi-key': os.getenv("APIKEY")
