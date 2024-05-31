@@ -1,0 +1,279 @@
+pipeline {
+  agent any
+  environment {
+		DOCKER_HUB_REGISTRY="s5audrey"
+        DOCKER_CREDENTIAL_ID = 'audreymelhy-docker-hub-auth'
+	}
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        disableConcurrentBuilds()
+        timeout (time: 5, unit: 'MINUTES')
+        timestamps()
+      }
+    stages {
+        stage('Setup parameters 1') {
+            steps {
+                script {
+                    properties([
+                        parameters([
+                          string(
+                             name: 'WARNTIME',
+                             defaultValue: '2',
+                             description: '''Warning time (in minutes) before starting upgrade'''
+                            ),
+
+                          string(
+                                defaultValue: 'develop',
+                                name: 'BRANCH_NAME',
+                                description: 'Git branch to build from'
+                            ),
+
+                          string(
+                                defaultValue: 'latest',
+                                name: 'IMAGE_TAG',
+                                description: 'Docker image tag'
+                            ),
+
+                          string(
+                                defaultValue: 'develop',
+                                name: 'Please_leave_this_section_as_it_is',
+                                trim: true
+                            ),  
+                        ])
+                    ])
+                }
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                script {
+                    // Login to Docker Hub
+                    withCredentials([usernamePassword(credentialsId: DOCKER_CREDENTIAL_ID, usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh "echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin"
+                    }
+                }
+            }
+        }
+
+        stage('cloning') {
+            
+            steps {
+                script {
+            // Execute Git commands using the stored credentials
+                   git credentialsId: 's5audrey-git-repo', url: "git@github.com:AudreyMelhy/weatherapp.git", branch: "${params.BRANCH_NAME}"
+                
+                dir("${WORKSPACE}") {
+				  sh '''
+                    ls -la
+                    git branch
+                  '''
+		       	   }
+                }
+	    	}
+        }
+        
+        stage('Test auth') {
+	     agent {
+            docker {
+              image 'golang:alpine'
+              args '-u root:root'
+            }
+          }
+            steps {
+                script {
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+                }
+                sh '''
+            id
+            cd auth/src/main || exit 1
+            go build -buildvcs=false || exit 1
+            cd - || exit 1
+                '''
+            }
+        }
+        stage('Test UI') {
+	     agent {
+            docker {
+              image 'node:17'
+              args '-u root:root'
+            }
+          }
+            steps {
+                script {
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+                }
+                sh '''
+            cd ui/ || exit 1
+            npm run || exit 1
+                '''
+            }
+        }
+        stage('Test weather') {
+	     agent {
+            docker {
+              image 'python:3.8-slim-buster'
+              args '-u root:root'
+            }
+          }
+            steps {
+                script {
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+                }
+                sh '''
+            cd weather
+            pip3 install -r requirements.txt
+                '''
+            }
+        }
+        
+        stage('Build auth') {
+            steps {
+                script {
+                    // Clone repository
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+
+                    // Build auth image
+                    dir("${WORKSPACE}/auth") {
+                        sh """ 
+                            docker build -t ${env.DOCKER_HUB_REGISTRY}/weatherapp-auth:${params.IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+        stage('Push auth image to Docker Hub') {
+            steps {
+                script {
+                    // Push auth image to Docker Hub
+                    sh """ 
+                        docker push ${env.DOCKER_HUB_REGISTRY}/weatherapp-auth:${params.IMAGE_TAG}
+                    """
+                }
+            }
+        }
+        stage('Build UI') {
+            steps {
+                script {
+                    // Clone repository
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+
+                    // Build UI image
+                    dir("${WORKSPACE}/ui") {
+                        sh """ 
+                            docker build -t ${env.DOCKER_HUB_REGISTRY}/weatherapp-ui:${params.IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+        stage('Push UI image to Docker Hub') {
+            steps {
+                script {
+                    // Push UI image to Docker Hub
+                    sh """ 
+                        docker push ${env.DOCKER_HUB_REGISTRY}/weatherapp-ui:${params.IMAGE_TAG}
+                    """
+                }
+            }
+        }
+        stage('Build weather') {
+            steps {
+                script {
+                    // Clone repository
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+
+                    // Build weather image
+                    dir("${WORKSPACE}/weather") {
+                        sh """ 
+                            docker build -t ${env.DOCKER_HUB_REGISTRY}/weatherapp-weather:${params.IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+        stage('Push weather image to Docker Hub') {
+            steps {
+                script {
+                    // Push weather image to Docker Hub
+                    sh """ 
+                        docker push ${env.DOCKER_HUB_REGISTRY}/weatherapp-weather:${params.IMAGE_TAG}
+                    """
+                }
+            }
+        }
+        stage('Build Redis') {
+            steps {
+                script {
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+
+                    dir("${WORKSPACE}/redis") {
+                        sh """ 
+                            docker build -t ${env.DOCKER_HUB_REGISTRY}/weatherapp-redis:${params.IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+        stage('Push Redis image to Docker Hub') {
+            steps {
+                script {
+                    sh """ 
+                        docker push ${env.DOCKER_HUB_REGISTRY}/weatherapp-redis:${params.IMAGE_TAG}
+                    """
+                }
+            }
+        }
+        stage('Build DB') {
+            steps {
+                script {
+                    git credentialsId: 's5audrey-git-repo',
+                        url: 'git@github.com:AudreyMelhy/weatherapp',
+                        branch: "${params.BRANCH_NAME}"
+
+                    dir("${WORKSPACE}/db") {
+                        sh """ 
+                            docker build -t ${env.DOCKER_HUB_REGISTRY}/weatherapp-db:${params.IMAGE_TAG} .
+                        """
+                    }
+                }
+            }
+        }
+        stage('Push DB image to Docker Hub') {
+            steps {
+                script {
+                    sh """ 
+                        docker push ${env.DOCKER_HUB_REGISTRY}/weatherapp-db:${params.IMAGE_TAG}
+                    """
+                }
+            }
+        }
+		
+    }
+    post {
+        always {
+            echo 'Pipeline finished.'
+        }
+        success {
+            echo 'Pipeline succeeded.'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
+    
+}

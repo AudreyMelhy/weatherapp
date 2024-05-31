@@ -1,0 +1,102 @@
+stage('Generate-compose') {
+
+	      steps {
+	        script {
+	          withCredentials([
+	            string(credentialsId: 'WEATHERAPP_MYSQL_ROOT_PASSWORD', variable: 'WEATHERAPP_MYSQL_ROOT_PASSWORD'),
+	            string(credentialsId: 'WEATHERAPP_REDIS_PASSWORD', variable: 'WEATHERAPP_REDIS_PASSWORD'),
+	            string(credentialsId: 'WEATHERAPP_DB_PASSWORD', variable: 'WEATHERAPP_DB_PASSWORD'),
+                string(credentialsId: 'WEATHERAPP_APIKEY', variable: 'WEATHERAPP_APIKEY')
+	          ]) {
+	              echo "Credentials fetched successfully."
+
+	              def composeContent = """\
+                version: '3.5'
+                services:
+                  db:
+                    container_name: weatherapp-db
+                    image: ${env.DOCKER_HUB_REGISTRY}/weatherapp-db:${params.IMAGE_TAG}
+                    environment:
+                      MYSQL_ROOT_PASSWORD: ${env.WEATHERAPP_MYSQL_ROOT_PASSWORD}
+                    volumes:
+                      - db-data:/var/lib/mysql
+                    networks:   
+                      - weatherapp
+                    restart: always
+                
+                  redis:
+                    container_name: weatherapp-redis
+                    image: ${env.DOCKER_HUB_REGISTRY}/weatherapp-redis:${params.IMAGE_TAG}
+                    networks:
+                      - weatherapp
+                    environment:
+                      REDIS_USER: redis
+                      REDIS_PASSWORD: ${env.WEATHERAPP_REDIS_PASSWORD}
+                    volumes:
+                      - redis-data:/data
+                    restart: always
+                
+                  weather:
+                    container_name: weatherapp-weather
+                    image: ${env.DOCKER_HUB_REGISTRY}/weatherapp-weather:${params.IMAGE_TAG}
+                    expose:
+                      - 5000
+                    environment:
+                      APIKEY: ${env.WEATHERAPP_APIKEY}
+                    networks:
+                      - weatherapp
+                    restart: always
+                    depends_on:
+                      - db
+                      - redis
+                
+                  auth:
+                    container_name: weatherapp-auth
+                    image: ${env.DOCKER_HUB_REGISTRY}/weatherapp-auth:${params.IMAGE_TAG}
+                    environment:
+                      DB_HOST: db
+                      DB_PASSWORD: ${env.WEATHERAPP_DB_PASSWORD}
+                    expose:
+                      - 8080
+                    networks:
+                      - weatherapp
+                    restart: always
+                    depends_on:
+                      - weather
+                
+                  ui:
+                    container_name: weatherapp-ui
+                    image: ${env.DOCKER_HUB_REGISTRY}/weatherapp-ui:${params.IMAGE_TAG}
+                    environment:
+                      AUTH_HOST: auth
+                      AUTH_PORT: 8080
+                      WEATHER_HOST: weather
+                      WEATHER_PORT: 5000
+                      REDIS_USER: redis
+                      REDIS_PASSWORD: ${env.WEATHERAPP_REDIS_PASSWORD}
+                    expose:
+                      - 3000
+                    ports:
+                      - 3000:3000
+                    networks:
+                      - weatherapp
+                    restart: always
+                    depends_on:
+                      - auth
+                networks:
+                  weatherapp:
+                volumes:
+                  db-data:
+                  redis-data:
+                """
+                
+                // Write the Docker Compose file
+                writeFile(file: 'docker-compose.yml', text: composeContent)
+                
+                // Print the contents of the Docker Compose file
+                echo "Generated Docker Compose file:"
+                sh "cat docker-compose.yml"
+            }
+        }
+    }
+}
