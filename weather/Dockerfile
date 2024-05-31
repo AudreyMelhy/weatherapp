@@ -4,6 +4,6 @@ COPY requirements.txt requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 5000
-ENTRYPOINT ["python3"]
-CMD ["python", "main.py"]
+# ENTRYPOINT ["python3"]
+CMD ["python3", "main.py"]
 # FROM devopseasylearning/thomisis-weather:v0.0.1
